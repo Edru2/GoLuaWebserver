@@ -2,11 +2,12 @@ package main
 
 /*
 #cgo CFLAGS: -I./lua-5.1.5/src
-#cgo LDFLAGS: -L./lua-5.1.5/src -llua
+#cgo LDFLAGS: -L./lua-5.1.5/src -llua -L. -lluaWebserverHelper
+
 #include <lua.h>
 #include <lualib.h>
 #include <lauxlib.h>
-#include "goLuaWebserver.h"
+#include "LuaWebserverHelper.h"
 #include <stdlib.h>
 #include <string.h>
 typedef const char cchar_t;

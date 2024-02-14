@@ -1,3 +1,4 @@
+package.path = package.path .. ";../?.so"
 local web = require("goLuaWebserver")
 local serverId = web.startWebserver("localhost:8080")
 

@@ -1,40 +1,63 @@
-# Default settings for Linux
-LUA_INCLUDE = ./lua-5.1.5/src
-LIBS = -L./lua-5.1.5/src/ -llua -L. -lluaWebserver -Wl,-rpath,'$$ORIGIN'
-CC = gcc
-CFLAGS = -shared -fPIC -O2
-TARGET = goLuaWebserver.so
-SOURCE = goLuaWebserver.c
+# Default settings
+TARGET_LINUX = goLuaWebserver.so
+TARGET_WINDOWS = goLuaWebserver.dll
+TARGET_DARWIN = goLuaWebserver.dylib
 GO_BUILD_MODE = -buildmode=c-shared
-
-# Platform-specific adjustments
+GO_SOURCE = luaWebserver.go
 ifeq ($(OS),Windows_NT)
-    CC = x86_64-w64-mingw32-gcc
-    TARGET = goLuaWebserver.dll
-    GO_BUILD_MODE = -buildmode=c-shared -ldflags "-extldflags '-static'"
+	WIN_CC = mingw32-gcc
+	WIN_AR = ar
+	LUA_M = ./lua-5.1.5/makeww.sh
 else
-    UNAME_S := $(shell uname -s)
-    ifeq ($(UNAME_S),Darwin)
-        CC = clang
-        CFLAGS = -shared -undefined dynamic_lookup -fPIC -O2
-        TARGET = goLuaWebserver.dylib
-    endif
-    ifeq ($(UNAME_S),Linux)
-        # Linux specific settings are already set as defaults
-    endif
+	WIN_CC = i686-w64-mingw32-gcc
+	WIN_AR = i686-w64-mingw32-ar
+	LUA_M = ./lua-5.1.5/makew.sh
 endif
 
-# Target-specific flags for ARM architectures could be added here
+all: linux windows darwin
 
-# Default target
-all: libluaWebserver.so $(TARGET)
+linux:
+	@UNAME_S=$$(uname -s); \
+	if [ "$$UNAME_S" = "Linux" ]; then \
+	echo "Building for Linux..."; \
+	make -C ./lua-5.1.5/ linux; \
+	gcc -c -I./lua-5.1.5/src -o LuaWebserverHelper.o LuaWebserverHelper.c; \
+	ar rcs libluaWebserverHelper.a LuaWebserverHelper.o; \
+	CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build $(GO_BUILD_MODE) -o $(TARGET_LINUX) $(GO_SOURCE); \
+	CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build $(GO_BUILD_MODE) -o $(TARGET_LINUX); \
+	else \
+		echo "Not building for Linux as the operating system is not Linux."; \
+	fi
 
-libluaWebserver.so: luaWebserver.go
-	go build -o libluaWebserver.so $(GO_BUILD_MODE) luaWebserver.go
+windows:
+	@echo "Building for Windows..."
+	@$(LUA_M)
+	@$(WIN_CC) -c -I./lua-5.1.5/src -o LuaWebserverHelper.o LuaWebserverHelper.c
+	@$(WIN_AR) rcs libluaWebserverHelper.a LuaWebserverHelper.o
+	@CGO_ENABLED=1 GOOS=windows GOARCH=386 CC=$(WIN_CC) CGO_CFLAGS="-I./lua-5.1.5/src" CGO_LDFLAGS="-static -O2 -L. -lluaWebserverHelper" go build $(GO_BUILD_MODE) -o $(TARGET_WINDOWS) $(GO_SOURCE)
+	@CGO_ENABLED=1 GOOS=windows GOARCH=386 CC=$(WIN_CC) CGO_CFLAGS="-I./lua-5.1.5/src" CGO_LDFLAGS="-static -O2 -L. -lluaWebserverHelper" go build $(GO_BUILD_MODE) -o $(TARGET_WINDOWS)
 
-$(TARGET): $(SOURCE) libluaWebserver.so
-	$(CC) $(CFLAGS) -o $(TARGET) $(SOURCE) -I$(LUA_INCLUDE) $(LIBS)
+darwin:
+	@UNAME_S=$$(uname -s); \
+	if [ "$$UNAME_S" = "Darwin" ]; then \
+		echo "Building for Darwin (macOS)..."; \
+		make -C ./lua-5.1.5/ macosx; \
+		clang -c -I./lua-5.1.5/src -o LuaWebserverHelper.o LuaWebserverHelper.c; \
+		ar rcs libluaWebserverHelper.a LuaWebserverHelper.o; \
+		CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build $(GO_BUILD_MODE) -o $(TARGET_DARWIN) $(GO_SOURCE); \
+		CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build $(GO_BUILD_MODE) -o $(TARGET_DARWIN); \
+	else \
+		echo "Not building for Darwin (macOS) as the operating system is not Darwin."; \
+	fi
+
 
 clean:
-	rm -f $(TARGET) libluaWebserver.so libLuaWebserver.h
+	@echo "Cleaning up..."
+	@rm -f $(TARGET_LINUX) $(TARGET_WINDOWS) $(TARGET_DARWIN) goLuaWebserver.h *.o *.a
+ifeq ($(OS),Windows_NT)
+	@mingw32-make -C ./lua-5.1.5/ clean
+else
+	@make -C ./lua-5.1.5/ clean
+endif
+
 
