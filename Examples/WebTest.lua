@@ -4,9 +4,20 @@ local serverId = web.startWebserver("localhost:8080")
 
 io.write("HTML:")
 local html = io.read()
-local function handleRequest(method, path)
-	print(method)
-	print(path)
+local function handleRequest(request)
+	for k,v in pairs(request) do
+		if type(v) == "string" then
+			print(string.format("%s = %s", k, v))
+		end
+		if type(v) == "table" then
+				for k1,v1 in pairs(v) do
+		if type(v1) == "string" then
+					print(string.format("		%s = %s", k1, v1))
+		end
+	end
+
+		end
+	end
     return  200, html, {["Content-Type"] = "text/html"}
 end
 

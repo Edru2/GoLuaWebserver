@@ -16,11 +16,12 @@ import "C"
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"sync"
 	"time"
 	"unsafe"
-	"sync"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
@@ -46,7 +47,7 @@ type Server struct {
 var (
 	servers = make(map[int]*Server)
 	nextID  = 0
-	mutex = &sync.RWMutex{}
+	mutex   = &sync.RWMutex{}
 )
 
 func generateUniqueID() string {
@@ -84,14 +85,13 @@ func Serve(L *C.lua_State, serverID C.int, path *C.cchar_t, luaFuncRef C.int) {
 	mux := server.Handler.(*http.ServeMux)
 	mux.HandleFunc(goPath,
 		func(w http.ResponseWriter, r *http.Request) {
-			method := r.Method
 			luaState := server.Paths[goPath].LuaState
 			luaFuncRef := server.Paths[goPath].FunctionRef
 			if luaState == nil {
 				return
 			}
 			mutex.Lock()
-			statusCode, responseBody, headers := callLuaFunction(luaState, luaFuncRef, method, goPath)
+			statusCode, responseBody, headers := callLuaFunction(luaState, luaFuncRef, r, goPath)
 			mutex.Unlock()
 			for key, value := range headers {
 				w.Header().Set(key, value)
@@ -101,18 +101,61 @@ func Serve(L *C.lua_State, serverID C.int, path *C.cchar_t, luaFuncRef C.int) {
 		})
 }
 
-func callLuaFunction(L *C.lua_State, luaFuncRef C.int, method, path string) (int, string, map[string]string) {
-	cMethod := C.CString(method)
-	cPath := C.CString(path)
-	cResponse := C.callLuaFunc(L, luaFuncRef, cMethod, cPath)
-	headers := make(map[string]string)
+func callLuaFunction(L *C.lua_State, luaFuncRef C.int, r *http.Request, path string) (int, string, map[string]string) {
+	bodyBytes, _ := io.ReadAll(r.Body)
+	bodyContent := string(bodyBytes)
 
-	defer C.free(unsafe.Pointer(cMethod))
-	defer C.free(unsafe.Pointer(cPath))
+	cReq := C.HttpRequest{
+		method:        C.CString(r.Method),
+		path:          C.CString(path),
+		url:           C.CString(r.URL.String()),
+		proto:         C.CString(r.Proto),
+		contentLength: C.long(r.ContentLength),
+		host:          C.CString(r.Host),
+		remoteAddr:    C.CString(r.RemoteAddr),
+		headersCount:  C.int(len(r.Header)),
+		body:          C.CString(bodyContent),
+	}
+
+	defer func() {
+		C.free(unsafe.Pointer(cReq.method))
+		C.free(unsafe.Pointer(cReq.path))
+		C.free(unsafe.Pointer(cReq.url))
+		C.free(unsafe.Pointer(cReq.proto))
+		C.free(unsafe.Pointer(cReq.host))
+		C.free(unsafe.Pointer(cReq.remoteAddr))
+		C.free(unsafe.Pointer(cReq.body))
+	}()
+	maxHeaders := len(cReq.headersKeys) / 256
+	if len(r.Header) < maxHeaders {
+		maxHeaders = len(r.Header)
+	}
+	cReq.headersCount = C.int(maxHeaders)
+
+	i := 0
+	for key, values := range r.Header {
+		if i >= maxHeaders {
+			break
+		}
+		keyCStr := C.CString(key)
+		valueCStr := C.CString(values[0]) // Simplification: taking first value only
+		defer C.free(unsafe.Pointer(keyCStr))
+		defer C.free(unsafe.Pointer(valueCStr))
+
+		C.strncpy(&cReq.headersKeys[i][0], keyCStr, 255)
+		cReq.headersKeys[i][255] = 0 // Ensure null termination
+		C.strncpy(&cReq.headersValues[i][0], valueCStr, 255)
+		cReq.headersValues[i][255] = 0 // Ensure null termination
+		i++
+	}
+	///////
+	cResponse := C.callLuaFunc(L, luaFuncRef, &cReq)
+	///////
+	responseHeaders := make(map[string]string)
 
 	if cResponse == nil {
 		errMsg := C.GoString(C.lua_tolstring(L, -1, nil))
-		return 500, fmt.Sprintf("Internal Server Error: %s", errMsg), headers
+		return 500, fmt.Sprintf("Internal Server Error: %s", errMsg), responseHeaders
 	}
 
 	defer C.free(unsafe.Pointer(cResponse))
@@ -125,10 +168,10 @@ func callLuaFunction(L *C.lua_State, luaFuncRef C.int, method, path string) (int
 	for i := 0; i < int(cResponse.headersCount); i++ {
 		key := C.GoString(&cResponse.headersKeys[i][0])
 		value := C.GoString(&cResponse.headersValues[i][0])
-		headers[key] = value
+		responseHeaders[key] = value
 	}
 
-	return statusCode, responseBody, headers
+	return statusCode, responseBody, responseHeaders
 }
 
 //export StartServer
@@ -207,7 +250,7 @@ func ServeWebSocket(L *C.lua_State, serverID C.int, path *C.cchar_t, luaFuncRef 
 
 			for {
 				mt, message, err := c.ReadMessage()
-				if mt == websocket.CloseMessage{
+				if mt == websocket.CloseMessage {
 					log.Printf("Client: %s disconnected.", clientID)
 					break
 				}

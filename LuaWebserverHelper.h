@@ -4,7 +4,6 @@
 
 #include <lua.h>
 
-// Define the LuaHttpResponse struct
 typedef struct
 {
     int statusCode;
@@ -14,8 +13,22 @@ typedef struct
     int headersCount;
 } LuaHttpResponse;
 
+typedef struct {
+    char* method;
+    char* path;
+    char* url;
+    char* proto;
+    long contentLength;
+    char* host;
+    char* remoteAddr;
+    char headersKeys[10][256];
+    char headersValues[10][256];
+    int headersCount;
+    char* body;
+} HttpRequest;
+
 // Function prototypes
-LuaHttpResponse* callLuaFunc(lua_State* L, int luaRef, const char* method, const char* path);
+LuaHttpResponse* callLuaFunc(lua_State* L, int luaRef, HttpRequest* request);
 void callLuaWebSocketFunc(lua_State* L, int luaRef, char* client, int messagetype, char* message);
 
 #endif // LUAWEBSERVERHELPER_H

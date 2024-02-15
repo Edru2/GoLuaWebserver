@@ -8,9 +8,9 @@
 #include <string.h>
 
 
-LuaHttpResponse* callLuaFunc(lua_State* L, int luaRef, const char* method, const char* path)
+LuaHttpResponse* callLuaFunc(lua_State* L, int luaRef, HttpRequest* request)
 {
-    if (L == NULL || method == NULL || path == NULL) {
+    if (L == NULL || request == NULL) {
         return NULL;
     }
     LuaHttpResponse* response = (LuaHttpResponse*)malloc(sizeof(LuaHttpResponse));
@@ -20,10 +20,33 @@ LuaHttpResponse* callLuaFunc(lua_State* L, int luaRef, const char* method, const
 
     lua_settop(L, 0);
     lua_rawgeti(L, LUA_REGISTRYINDEX, luaRef);
-    lua_pushstring(L, method);
-    lua_pushstring(L, path);
+    lua_newtable(L);
+    lua_pushstring(L, request->method);
+    lua_setfield(L, -2, "method");
+    lua_pushstring(L, request->path);
+    lua_setfield(L, -2, "path");
+    lua_pushstring(L, request->url);
+    lua_setfield(L, -2, "url");
+    lua_pushinteger(L, request->contentLength);
+    lua_setfield(L, -2, "contentLength");
+    lua_pushstring(L, request->host);
+    lua_setfield(L, -2, "host");
+    lua_pushstring(L, request->remoteAddr);
+    lua_setfield(L, -2, "remoteAddr");
+    lua_pushstring(L, request->body);
+    lua_setfield(L, -2, "body");
+    lua_newtable(L);
+    for (int i = 0; i < request->headersCount; ++i) {
+        lua_pushstring(L, request->headersValues[i]);
+        lua_setfield(L, -2, request->headersKeys[i]);
+    }
+    lua_setfield(L, -2, "Headers");
+    lua_pushinteger(L, request->headersCount);
+    lua_setfield(L, -2, "headersCount");
+
+
     int error = 0;
-    error = lua_pcall(L, 2, LUA_MULTRET, 0);
+    error = lua_pcall(L, 1, LUA_MULTRET, 0);
     if (error != 0) {
         const char* errorMsg = lua_tostring(L, -1);
         lua_pop(L, 1);  // Remove the error message from the stack
