@@ -6,3 +6,4 @@
 lua-5.1.5/src/luac
 lua-5.1.5/src/lua
 luaWebserver
+goLuaWebserver.h
