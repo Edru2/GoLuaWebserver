@@ -1,6 +1,6 @@
 #include "goLuaWebserver.h"
 #include <lauxlib.h>
-#include <lstate.h>
+//#include <lstate.h>
 #include <lua.h>
 #include <lualib.h>
 #include <stdbool.h>
@@ -131,13 +131,15 @@ static int stopWebserver(lua_State* L)
     return 1;
 }
 
-#if defined(_WIN32) || defined(__CYGWIN__)
-#define DLL_PUBLIC __declspec(dllexport)
+#ifndef LUAWEBSERVER_LIB
+#ifdef _WIN32
+#define LUAWEBSERVER_LIB __declspec(dllexport)
 #else
-#define DLL_PUBLIC
+#define LUAWEBSERVER_LIB __attribute__ ((visibility ("default")))
+#endif
 #endif
 
-DLL_PUBLIC int luaopen_goLuaWebserver(lua_State* L)
+LUAWEBSERVER_LIB int luaopen_goLuaWebserver(lua_State* L)
 {
     createMyResource(L);
     lua_newtable(L);

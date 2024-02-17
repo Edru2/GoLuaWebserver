@@ -1,9 +1,8 @@
 package main
 
 /*
-#cgo CFLAGS: -I./lua-5.1.5/src
-#cgo LDFLAGS: -L./lua-5.1.5/src -llua -L. -lluaWebserverHelper
-
+#cgo CFLAGS: -I./external/luajit/src
+#cgo LDFLAGS: -L. -lluaWebserverHelper
 #include <lua.h>
 #include <lualib.h>
 #include <lauxlib.h>

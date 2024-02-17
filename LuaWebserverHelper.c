@@ -1,6 +1,5 @@
 #include "LuaWebserverHelper.h"
 #include <lauxlib.h>
-#include <lstate.h>
 #include <lua.h>
 #include <lualib.h>
 #include <stdbool.h>
