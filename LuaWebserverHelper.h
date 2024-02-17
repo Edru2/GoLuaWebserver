@@ -8,8 +8,8 @@ typedef struct
 {
     int statusCode;
     char* responseBody;
-    char headersKeys[10][256];
-    char headersValues[10][256];
+    char headersKeys[20][256];
+    char headersValues[20][256];
     int headersCount;
 } LuaHttpResponse;
 
@@ -21,8 +21,8 @@ typedef struct {
     long contentLength;
     char* host;
     char* remoteAddr;
-    char headersKeys[10][256];
-    char headersValues[10][256];
+    char headersKeys[20][256];
+    char headersValues[20][256];
     int headersCount;
     char* body;
 } HttpRequest;

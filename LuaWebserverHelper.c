@@ -43,7 +43,6 @@ LuaHttpResponse* callLuaFunc(lua_State* L, int luaRef, HttpRequest* request)
     lua_pushinteger(L, request->headersCount);
     lua_setfield(L, -2, "headersCount");
 
-
     int error = 0;
     error = lua_pcall(L, 1, LUA_MULTRET, 0);
     if (error != 0) {

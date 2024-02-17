@@ -103,7 +103,6 @@ func Serve(L *C.lua_State, serverID C.int, path *C.cchar_t, luaFuncRef C.int) {
 func callLuaFunction(L *C.lua_State, luaFuncRef C.int, r *http.Request, path string) (int, string, map[string]string) {
 	bodyBytes, _ := io.ReadAll(r.Body)
 	bodyContent := string(bodyBytes)
-
 	cReq := C.HttpRequest{
 		method:        C.CString(r.Method),
 		path:          C.CString(path),
@@ -125,7 +124,7 @@ func callLuaFunction(L *C.lua_State, luaFuncRef C.int, r *http.Request, path str
 		C.free(unsafe.Pointer(cReq.remoteAddr))
 		C.free(unsafe.Pointer(cReq.body))
 	}()
-	maxHeaders := len(cReq.headersKeys) / 256
+	maxHeaders := 20
 	if len(r.Header) < maxHeaders {
 		maxHeaders = len(r.Header)
 	}

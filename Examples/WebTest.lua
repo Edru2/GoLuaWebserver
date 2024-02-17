@@ -6,10 +6,11 @@ io.write("HTML:")
 local html = io.read()
 local function handleRequest(request)
 	for k,v in pairs(request) do
-		if type(v) == "string" then
+		if type(v) ~= "table" then
 			print(string.format("%s = %s", k, v))
 		end
 		if type(v) == "table" then
+				print(k)
 				for k1,v1 in pairs(v) do
 		if type(v1) == "string" then
 					print(string.format("		%s = %s", k1, v1))
