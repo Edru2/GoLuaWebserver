@@ -51,8 +51,9 @@ typedef int GoInt32;
 typedef unsigned int GoUint32;
 typedef long long GoInt64;
 typedef unsigned long long GoUint64;
-typedef GoInt64 GoInt;
-typedef GoUint64 GoUint;
+
+typedef GoInt32 GoInt;
+typedef GoUint32 GoUint;
 typedef size_t GoUintptr;
 typedef float GoFloat32;
 typedef double GoFloat64;
@@ -69,7 +70,8 @@ typedef double _Complex GoComplex128;
   static assertion to make sure the file is being used on architecture
   at least with matching size of GoInt.
 */
-typedef char _check_for_64_bit_pointer_matching_GoInt[sizeof(void*)==64/8 ? 1:-1];
+
+typedef char _check_for_32_bit_pointer_matching_GoInt[sizeof(void*)==32/8 ? 1:-1];
 
 #ifndef GO_CGO_GOSTRING_TYPEDEF
 typedef _GoString_ GoString;
@@ -86,15 +88,15 @@ typedef struct { void *data; GoInt len; GoInt cap; } GoSlice;
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-extern void Serve(lua_State* L, int serverID, cchar_t* path, int luaFuncRef);
-extern int StartServer(cchar_t* address);
-extern void ServeWebSocket(lua_State* L, int serverID, cchar_t* path, int luaFuncRef);
-extern void WriteToWebSocketClient(int serverID, cchar_t* clientID, cchar_t* message);
-extern void ServeFiles(int serverID, cchar_t* path, cchar_t* dir);
-extern void StopServer(int serverID);
-extern void StopAllServers();
-extern void StopLuaStateFunctions(lua_State* L);
+  
+extern __declspec(dllexport) void Serve(lua_State* L, int serverID, cchar_t* path, int luaFuncRef);
+extern __declspec(dllexport) int StartServer(cchar_t* address);
+extern __declspec(dllexport) void ServeWebSocket(lua_State* L, int serverID, cchar_t* path, int luaFuncRef);
+extern __declspec(dllexport) void WriteToWebSocketClient(int serverID, cchar_t* clientID, cchar_t* message);
+extern __declspec(dllexport) void ServeFiles(int serverID, cchar_t* path, cchar_t* dir);
+extern __declspec(dllexport) void StopServer(int serverID);
+extern __declspec(dllexport) void StopAllServers();
+extern __declspec(dllexport) void StopLuaStateFunctions(lua_State* L);
 
 #ifdef __cplusplus
 }
