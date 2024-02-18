@@ -44,14 +44,14 @@ darwin:
 	if [ "$$UNAME_S" = "Darwin" ]; then \
 		echo "Building for Darwin (macOS)..."; \
 		make -C $(LUA_FOLDER); \
+		@ln -s $(LUA_FOLDER)src/libluajit-5.1.dll.a liblua.a
 		clang -c -I$(LUA_FOLDER)src -o LuaWebserverHelper.o LuaWebserverHelper.c; \
 		ar rcs libluaWebserverHelper.a LuaWebserverHelper.o; \
-		CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build $(GO_BUILD_MODE) -o $(TARGET_DARWIN) $(GO_SOURCE); \
-		CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build $(GO_BUILD_MODE) -o $(TARGET_DARWIN); \
+		CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 CGO_LDFLAGS="-shared -O2 -L. -lluaWebserverHelper -llua" go build $(GO_BUILD_MODE) -o $(TARGET_DARWIN) $(GO_SOURCE); \
+		CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 CGO_LDFLAGS="-shared -O2 -L. -lluaWebserverHelper -llua" go build $(GO_BUILD_MODE) -o $(TARGET_DARWIN); \
 	else \
 		echo "Not building for Darwin (macOS) as the operating system is not Darwin."; \
 	fi
-
 
 clean:
 	@echo "Cleaning up..."
