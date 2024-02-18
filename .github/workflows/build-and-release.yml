@@ -31,20 +31,22 @@ jobs:
            make: make
     steps:
       - uses: actions/checkout@v2
+        with:
+          submodules: recursive
       - name: Set up Go
         uses: actions/setup-go@v2
         with:
           go-version: '1.22'
       - name: InstallMinGW
         if: matrix.goos == 'windows'
-        run: sudo apt-get install -y mingw-w64
+        run: sudo apt-get install -y mingw-w64 gcc-multilib
       - name: Build
         run: |
           ${{ matrix.make }} ${{ matrix.goos }}
       - name: Upload artifacts
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ matrix.goos }}-${{ matrix.goarch }}
+          name: GoLuaWebserver-${{ matrix.goos }}-${{ matrix.goarch }}
           path: ./*.${{ matrix.suffix }}
 
   release:
@@ -60,7 +62,7 @@ jobs:
       - name: Prepare for Release
         id: prep
         run: |
-          echo "RELEASE_FILES=$(ls artifacts/*.zip | xargs -n 1 basename)" >> $GITHUB_ENV
+          echo "RELEASE_FILES=$(ls artifacts/ | xargs -n 1 basename)" >> $GITHUB_ENV
       - name: Create Release
         id: create_release
         uses: actions/create-release@v1

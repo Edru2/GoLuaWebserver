@@ -1,9 +1,8 @@
 package main
 
 /*
-#cgo CFLAGS: -I./lua-5.1.5/src
-#cgo LDFLAGS: -L./lua-5.1.5/src -llua -L. -lluaWebserverHelper
-
+#cgo CFLAGS: -I./external/luajit/src
+#cgo LDFLAGS: -L. -lluaWebserverHelper
 #include <lua.h>
 #include <lualib.h>
 #include <lauxlib.h>
@@ -16,11 +15,13 @@ import "C"
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"strings"
+	"sync"
 	"time"
 	"unsafe"
-	"sync"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
@@ -46,7 +47,7 @@ type Server struct {
 var (
 	servers = make(map[int]*Server)
 	nextID  = 0
-	mutex = &sync.RWMutex{}
+	mutex   = &sync.RWMutex{}
 )
 
 func generateUniqueID() string {
@@ -55,7 +56,6 @@ func generateUniqueID() string {
 
 //export Serve
 func Serve(L *C.lua_State, serverID C.int, path *C.cchar_t, luaFuncRef C.int) {
-	goPath := C.GoString(path)
 	goServerId := int(serverID)
 
 	mutex.RLock()
@@ -66,6 +66,10 @@ func Serve(L *C.lua_State, serverID C.int, path *C.cchar_t, luaFuncRef C.int) {
 		return
 	}
 
+	goPath := C.GoString(path)
+	if goPath == "" {
+		goPath = "/"
+	}
 	mutex.RLock()
 	_, exists = server.Paths[goPath]
 	mutex.RUnlock()
@@ -84,14 +88,17 @@ func Serve(L *C.lua_State, serverID C.int, path *C.cchar_t, luaFuncRef C.int) {
 	mux := server.Handler.(*http.ServeMux)
 	mux.HandleFunc(goPath,
 		func(w http.ResponseWriter, r *http.Request) {
-			method := r.Method
+			if r.URL.Path != goPath {
+				http.NotFound(w, r)
+				return
+			}
 			luaState := server.Paths[goPath].LuaState
 			luaFuncRef := server.Paths[goPath].FunctionRef
 			if luaState == nil {
 				return
 			}
 			mutex.Lock()
-			statusCode, responseBody, headers := callLuaFunction(luaState, luaFuncRef, method, goPath)
+			statusCode, responseBody, headers := callLuaFunction(luaState, luaFuncRef, r, goPath)
 			mutex.Unlock()
 			for key, value := range headers {
 				w.Header().Set(key, value)
@@ -101,18 +108,60 @@ func Serve(L *C.lua_State, serverID C.int, path *C.cchar_t, luaFuncRef C.int) {
 		})
 }
 
-func callLuaFunction(L *C.lua_State, luaFuncRef C.int, method, path string) (int, string, map[string]string) {
-	cMethod := C.CString(method)
-	cPath := C.CString(path)
-	cResponse := C.callLuaFunc(L, luaFuncRef, cMethod, cPath)
-	headers := make(map[string]string)
+func callLuaFunction(L *C.lua_State, luaFuncRef C.int, r *http.Request, path string) (int, string, map[string]string) {
+	bodyBytes, _ := io.ReadAll(r.Body)
+	bodyContent := string(bodyBytes)
+	cReq := C.HttpRequest{
+		method:        C.CString(r.Method),
+		path:          C.CString(path),
+		url:           C.CString(r.URL.String()),
+		proto:         C.CString(r.Proto),
+		contentLength: C.long(r.ContentLength),
+		host:          C.CString(r.Host),
+		remoteAddr:    C.CString(r.RemoteAddr),
+		headersCount:  C.int(len(r.Header)),
+		body:          C.CString(bodyContent),
+	}
 
-	defer C.free(unsafe.Pointer(cMethod))
-	defer C.free(unsafe.Pointer(cPath))
+	defer func() {
+		C.free(unsafe.Pointer(cReq.method))
+		C.free(unsafe.Pointer(cReq.path))
+		C.free(unsafe.Pointer(cReq.url))
+		C.free(unsafe.Pointer(cReq.proto))
+		C.free(unsafe.Pointer(cReq.host))
+		C.free(unsafe.Pointer(cReq.remoteAddr))
+		C.free(unsafe.Pointer(cReq.body))
+	}()
+	maxHeaders := 20
+	if len(r.Header) < maxHeaders {
+		maxHeaders = len(r.Header)
+	}
+	cReq.headersCount = C.int(maxHeaders)
+
+	i := 0
+	for key, values := range r.Header {
+		if i >= maxHeaders {
+			break
+		}
+		keyCStr := C.CString(key)
+		valueCStr := C.CString(strings.Join(values, "|"))
+		defer C.free(unsafe.Pointer(keyCStr))
+		defer C.free(unsafe.Pointer(valueCStr))
+
+		C.strncpy(&cReq.headersKeys[i][0], keyCStr, 255)
+		cReq.headersKeys[i][255] = 0 // Ensure null termination
+		C.strncpy(&cReq.headersValues[i][0], valueCStr, 255)
+		cReq.headersValues[i][255] = 0 // Ensure null termination
+		i++
+	}
+	///////
+	cResponse := C.callLuaFunc(L, luaFuncRef, &cReq)
+	///////
+	responseHeaders := make(map[string]string)
 
 	if cResponse == nil {
 		errMsg := C.GoString(C.lua_tolstring(L, -1, nil))
-		return 500, fmt.Sprintf("Internal Server Error: %s", errMsg), headers
+		return 500, fmt.Sprintf("Internal Server Error: %s", errMsg), responseHeaders
 	}
 
 	defer C.free(unsafe.Pointer(cResponse))
@@ -125,10 +174,10 @@ func callLuaFunction(L *C.lua_State, luaFuncRef C.int, method, path string) (int
 	for i := 0; i < int(cResponse.headersCount); i++ {
 		key := C.GoString(&cResponse.headersKeys[i][0])
 		value := C.GoString(&cResponse.headersValues[i][0])
-		headers[key] = value
+		responseHeaders[key] = value
 	}
 
-	return statusCode, responseBody, headers
+	return statusCode, responseBody, responseHeaders
 }
 
 //export StartServer
@@ -139,8 +188,11 @@ func StartServer(address *C.cchar_t) C.int {
 	mux := http.NewServeMux()
 	server := &Server{
 		Server: http.Server{
-			Addr:    serverAddress,
-			Handler: mux,
+			Addr:           serverAddress,
+			Handler:        mux,
+			ReadTimeout:    10 * time.Second,
+			WriteTimeout:   10 * time.Second,
+			MaxHeaderBytes: 1 << 20,
 		},
 		Paths:            make(map[string]*PathFunction),
 		WebSocketClients: make(map[string]*Client),
@@ -158,7 +210,6 @@ func StartServer(address *C.cchar_t) C.int {
 
 //export ServeWebSocket
 func ServeWebSocket(L *C.lua_State, serverID C.int, path *C.cchar_t, luaFuncRef C.int) {
-	goPath := C.GoString(path)
 	goServerId := int(serverID)
 
 	server, exists := servers[goServerId]
@@ -166,18 +217,25 @@ func ServeWebSocket(L *C.lua_State, serverID C.int, path *C.cchar_t, luaFuncRef 
 		log.Printf("Server with ID %d not found", serverID)
 		return
 	}
-
+	goPath := C.GoString(path)
+	if goPath == "" {
+		goPath = "/"
+	}
+	mutex.RLock()
 	_, exists = server.Paths[goPath]
+	mutex.RUnlock()
+
 	if exists {
 		log.Printf("Path exists already!")
 		return
 	}
-
+	mutex.Lock()
 	server.Paths[goPath] = &PathFunction{
 		FunctionRef: luaFuncRef,
 		LuaState:    L,
 		Clients:     make(map[string]*Client),
 	}
+	mutex.Unlock()
 
 	mux := server.Handler.(*http.ServeMux)
 
@@ -207,7 +265,7 @@ func ServeWebSocket(L *C.lua_State, serverID C.int, path *C.cchar_t, luaFuncRef 
 
 			for {
 				mt, message, err := c.ReadMessage()
-				if mt == websocket.CloseMessage{
+				if mt == websocket.CloseMessage {
 					log.Printf("Client: %s disconnected.", clientID)
 					break
 				}
@@ -245,6 +303,36 @@ func WriteToWebSocketClient(serverID C.int, clientID *C.cchar_t, message *C.ccha
 		log.Println("write:", err)
 	}
 
+}
+
+//export ServeFiles
+func ServeFiles(serverID C.int, path *C.cchar_t, dir *C.cchar_t) {
+	goServerId := int(serverID)
+	server, exists := servers[goServerId]
+	if !exists {
+		log.Printf("Server with ID %d not found", serverID)
+		return
+	}
+	goDir := C.GoString(dir)
+	goPath := C.GoString(path)
+	if goPath == "" {
+		goPath = "/"
+	}
+	mutex.RLock()
+	_, exists = server.Paths[goPath]
+	mutex.RUnlock()
+	if exists {
+		log.Printf("Path exists already!")
+		return
+	}
+
+	mutex.Lock()
+	server.Paths[goPath] = &PathFunction{}
+	mutex.Unlock()
+
+	fileServer := http.FileServer(http.Dir(goDir))
+	mux := server.Handler.(*http.ServeMux)
+	mux.Handle(goPath, http.StripPrefix(goPath, fileServer))
 }
 
 //export StopServer

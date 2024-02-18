@@ -14,15 +14,15 @@ The Lua-Go Webserver Integration project enables the use of Lua scripts to manag
 
 ### Prerequisites
 
--   Go (version 1.13 or higher recommended)
--   Lua 5.1 development libraries
+-   Go (version 1.21 or higher recommended)
 -   GCC compiler for CGo integration
+-   mingw32 for Windows or Clang for OSX
 
 ### Installation
 
 1.  **Clone the Repository**
 ```bash
-git clone https://github.com/edru2/GoLuaWebserver
+git clone --recursive https://github.com/edru2/GoLuaWebserver
 cd GoLuaWebserver
 ```
 -   **Build the Project**
@@ -31,7 +31,17 @@ cd GoLuaWebserver
     
 ```bash
 make clean
-make
+```
+Then, build for your specific OS:
+
+-   For Windows, use make windows.
+-   For Linux, use make linux.
+-   For macOS, use make darwin.
+
+Example for Linux:
+
+```bash
+make linux
 ```   
 
 ### Running the Server
@@ -54,9 +64,9 @@ io.write("HTML content to serve: ")
 local html = io.read()
 
 -- HTTP request handler
-local function handleRequest(method, path)
-    print("HTTP Request Method:", method)
-    print("HTTP Request Path:", path)
+local function handleRequest(request)
+    print("HTTP Request Method:", request.method)
+    print("HTTP Request Path:", request.path)
     return 200, html, {["Content-Type"] = "text/html"}
 end
 
