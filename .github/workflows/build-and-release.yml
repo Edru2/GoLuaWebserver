@@ -49,36 +49,41 @@ jobs:
           name: GoLuaWebserver-${{ matrix.goos }}-${{ matrix.goarch }}
           path: ./*.${{ matrix.suffix }}
 
-  release:
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v2
-        with:
-          path: artifacts
-      - name: Prepare for Release
-        id: prep
-        run: |
-          echo "RELEASE_FILES=$(ls artifacts/ | xargs -n 1 basename)" >> $GITHUB_ENV
-      - name: Create Release
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ github.ref_name }}
-          release_name: Release ${{ github.sha }}
-          draft: false
-          prerelease: false
-      - name: Upload Release Asset
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./artifacts/${{ env.RELEASE_FILES }}
-          asset_name: ${{ env.RELEASE_FILES }}
-          asset_content_type: application/zip
+release:
+  needs: build
+  runs-on: ubuntu-latest
+  permissions:
+    contents: write
+  steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v2
+      with:
+        path: artifacts
+
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: release-${{ github.run_number }}-${{ github.sha }}
+        release_name: Release ${{ github.sha }}
+        draft: false
+        prerelease: false
+
+    - name: Upload Release Assets
+      run: |
+        ARTIFACTS_DIR=artifacts
+        if [ -d "$ARTIFACTS_DIR" ] && [ "$(ls -A $ARTIFACTS_DIR)" ]; then
+          for FILE in $ARTIFACTS_DIR/*; do
+            FILE_NAME=$(basename "$FILE")
+            echo "Uploading $FILE_NAME"
+            MIME_TYPE=$(file -b --mime-type "$FILE")
+            UPLOAD_URL="${{ steps.create_release.outputs.upload_url }}?name=$FILE_NAME&label=$FILE_NAME"
+            RESPONSE=$(curl -X POST -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" -H "Content-Type: $MIME_TYPE" --data-binary @"$FILE" "$UPLOAD_URL")
+            echo "Upload response: $RESPONSE"
+          done
+        else
+          echo "No artifacts found in $ARTIFACTS_DIR."
+        fi
+      shell: bash

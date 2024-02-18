@@ -45,7 +45,6 @@ darwin:
 		echo "Building for Darwin (macOS)..."; \
 		export MACOSX_DEPLOYMENT_TARGET=10.15; \
 		make -C $(LUA_FOLDER); \
-		ls $(LUA_FOLDER)src; \
 		ln -s $(LUA_FOLDER)src/libluajit.a liblua.a; \
 		clang -c -I$(LUA_FOLDER)src -o LuaWebserverHelper.o LuaWebserverHelper.c; \
 		ar rcs libluaWebserverHelper.a LuaWebserverHelper.o; \
