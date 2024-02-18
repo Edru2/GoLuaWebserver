@@ -56,11 +56,7 @@ func generateUniqueID() string {
 
 //export Serve
 func Serve(L *C.lua_State, serverID C.int, path *C.cchar_t, luaFuncRef C.int) {
-	goPath := C.GoString(path)
 	goServerId := int(serverID)
-	if goPath == "" {
-		goPath = "/"
-	}
 
 	mutex.RLock()
 	server, exists := servers[goServerId]
@@ -70,6 +66,10 @@ func Serve(L *C.lua_State, serverID C.int, path *C.cchar_t, luaFuncRef C.int) {
 		return
 	}
 
+	goPath := C.GoString(path)
+	if goPath == "" {
+		goPath = "/"
+	}
 	mutex.RLock()
 	_, exists = server.Paths[goPath]
 	mutex.RUnlock()
@@ -210,7 +210,6 @@ func StartServer(address *C.cchar_t) C.int {
 
 //export ServeWebSocket
 func ServeWebSocket(L *C.lua_State, serverID C.int, path *C.cchar_t, luaFuncRef C.int) {
-	goPath := C.GoString(path)
 	goServerId := int(serverID)
 
 	server, exists := servers[goServerId]
@@ -218,18 +217,25 @@ func ServeWebSocket(L *C.lua_State, serverID C.int, path *C.cchar_t, luaFuncRef 
 		log.Printf("Server with ID %d not found", serverID)
 		return
 	}
-
+	goPath := C.GoString(path)
+	if goPath == "" {
+		goPath = "/"
+	}
+	mutex.RLock()
 	_, exists = server.Paths[goPath]
+	mutex.RUnlock()
+
 	if exists {
 		log.Printf("Path exists already!")
 		return
 	}
-
+	mutex.Lock()
 	server.Paths[goPath] = &PathFunction{
 		FunctionRef: luaFuncRef,
 		LuaState:    L,
 		Clients:     make(map[string]*Client),
 	}
+	mutex.Unlock()
 
 	mux := server.Handler.(*http.ServeMux)
 
@@ -309,6 +315,9 @@ func ServeFiles(serverID C.int, path *C.cchar_t, dir *C.cchar_t) {
 	}
 	goDir := C.GoString(dir)
 	goPath := C.GoString(path)
+	if goPath == "" {
+		goPath = "/"
+	}
 	mutex.RLock()
 	_, exists = server.Paths[goPath]
 	mutex.RUnlock()
