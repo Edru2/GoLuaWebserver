@@ -75,7 +75,7 @@ void getVerifiedArgument(lua_State* L, int pos, const char* functionName, const 
 }
 static int startWebserver(lua_State* L)
 {
-    getVerifiedArgument(L, 1, __func__, "adress", LUA_TSTRING, 0); /* Verify first argument is a string */
+    getVerifiedArgument(L, 1, __func__, "address", LUA_TSTRING, 0); /* Verify first argument is a string */
     const char* address = lua_tostring(L, 1);
     int serverId = StartServer(address);
     lua_pushinteger(L, serverId);
@@ -121,6 +121,18 @@ static int writeWebSocket(lua_State* L)
     return 0;
 }
 
+static int serveFiles(lua_State* L)
+{
+    getVerifiedArgument(L, 1, __func__, "server id", LUA_TNUMBER, 0);
+    getVerifiedArgument(L, 2, __func__, "path", LUA_TSTRING, 0);
+    getVerifiedArgument(L, 3, __func__, "directory", LUA_TSTRING, 0);
+    int serverId = luaL_checkinteger(L, 1);
+    const char* path = lua_tostring(L, 2);
+    const char* dir = lua_tostring(L, 3);
+    ServeFiles(serverId, path, dir);
+    return 0;
+}
+
 static int stopWebserver(lua_State* L)
 {
     getVerifiedArgument(L, 1, __func__, "server id", LUA_TNUMBER, 0);
@@ -134,7 +146,7 @@ static int stopWebserver(lua_State* L)
 #ifdef _WIN32
 #define LUAWEBSERVER_LIB __declspec(dllexport)
 #else
-#define LUAWEBSERVER_LIB __attribute__ ((visibility ("default")))
+#define LUAWEBSERVER_LIB __attribute__((visibility("default")))
 #endif
 #endif
 
@@ -152,6 +164,8 @@ LUAWEBSERVER_LIB int luaopen_goLuaWebserver(lua_State* L)
     lua_setfield(L, -2, "serveWebSocket");
     lua_pushcfunction(L, writeWebSocket);
     lua_setfield(L, -2, "writeWebSocket");
+    lua_pushcfunction(L, serveFiles);
+    lua_setfield(L, -2, "serveFiles");
 
     return 1;
 }

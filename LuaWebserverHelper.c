@@ -39,7 +39,7 @@ LuaHttpResponse* callLuaFunc(lua_State* L, int luaRef, HttpRequest* request)
         lua_pushstring(L, request->headersValues[i]);
         lua_setfield(L, -2, request->headersKeys[i]);
     }
-    lua_setfield(L, -2, "Headers");
+    lua_setfield(L, -2, "headers");
     lua_pushinteger(L, request->headersCount);
     lua_setfield(L, -2, "headersCount");
 

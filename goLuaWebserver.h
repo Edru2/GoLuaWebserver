@@ -91,6 +91,7 @@ extern void Serve(lua_State* L, int serverID, cchar_t* path, int luaFuncRef);
 extern int StartServer(cchar_t* address);
 extern void ServeWebSocket(lua_State* L, int serverID, cchar_t* path, int luaFuncRef);
 extern void WriteToWebSocketClient(int serverID, cchar_t* clientID, cchar_t* message);
+extern void ServeFiles(int serverID, cchar_t* path, cchar_t* dir);
 extern void StopServer(int serverID);
 extern void StopAllServers();
 extern void StopLuaStateFunctions(lua_State* L);

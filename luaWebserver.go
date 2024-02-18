@@ -18,6 +18,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 	"unsafe"
@@ -57,6 +58,9 @@ func generateUniqueID() string {
 func Serve(L *C.lua_State, serverID C.int, path *C.cchar_t, luaFuncRef C.int) {
 	goPath := C.GoString(path)
 	goServerId := int(serverID)
+	if goPath == "" {
+		goPath = "/"
+	}
 
 	mutex.RLock()
 	server, exists := servers[goServerId]
@@ -84,6 +88,10 @@ func Serve(L *C.lua_State, serverID C.int, path *C.cchar_t, luaFuncRef C.int) {
 	mux := server.Handler.(*http.ServeMux)
 	mux.HandleFunc(goPath,
 		func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != goPath {
+				http.NotFound(w, r)
+				return
+			}
 			luaState := server.Paths[goPath].LuaState
 			luaFuncRef := server.Paths[goPath].FunctionRef
 			if luaState == nil {
@@ -136,7 +144,7 @@ func callLuaFunction(L *C.lua_State, luaFuncRef C.int, r *http.Request, path str
 			break
 		}
 		keyCStr := C.CString(key)
-		valueCStr := C.CString(values[0]) // Simplification: taking first value only
+		valueCStr := C.CString(strings.Join(values, "|"))
 		defer C.free(unsafe.Pointer(keyCStr))
 		defer C.free(unsafe.Pointer(valueCStr))
 
@@ -180,8 +188,11 @@ func StartServer(address *C.cchar_t) C.int {
 	mux := http.NewServeMux()
 	server := &Server{
 		Server: http.Server{
-			Addr:    serverAddress,
-			Handler: mux,
+			Addr:           serverAddress,
+			Handler:        mux,
+			ReadTimeout:    10 * time.Second,
+			WriteTimeout:   10 * time.Second,
+			MaxHeaderBytes: 1 << 20,
 		},
 		Paths:            make(map[string]*PathFunction),
 		WebSocketClients: make(map[string]*Client),
@@ -286,6 +297,33 @@ func WriteToWebSocketClient(serverID C.int, clientID *C.cchar_t, message *C.ccha
 		log.Println("write:", err)
 	}
 
+}
+
+//export ServeFiles
+func ServeFiles(serverID C.int, path *C.cchar_t, dir *C.cchar_t) {
+	goServerId := int(serverID)
+	server, exists := servers[goServerId]
+	if !exists {
+		log.Printf("Server with ID %d not found", serverID)
+		return
+	}
+	goDir := C.GoString(dir)
+	goPath := C.GoString(path)
+	mutex.RLock()
+	_, exists = server.Paths[goPath]
+	mutex.RUnlock()
+	if exists {
+		log.Printf("Path exists already!")
+		return
+	}
+
+	mutex.Lock()
+	server.Paths[goPath] = &PathFunction{}
+	mutex.Unlock()
+
+	fileServer := http.FileServer(http.Dir(goDir))
+	mux := server.Handler.(*http.ServeMux)
+	mux.Handle(goPath, http.StripPrefix(goPath, fileServer))
 }
 
 //export StopServer
