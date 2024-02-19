@@ -73,6 +73,7 @@ void getVerifiedArgument(lua_State* L, int pos, const char* functionName, const 
         luaL_error(L, "Unsupported type %d for verification in function %s", type, functionName);
     }
 }
+
 static int startWebserver(lua_State* L)
 {
     getVerifiedArgument(L, 1, __func__, "address", LUA_TSTRING, 0); /* Verify first argument is a string */
@@ -84,6 +85,7 @@ static int startWebserver(lua_State* L)
 
 static int serve(lua_State* L)
 {
+    Message message;
     getVerifiedArgument(L, 1, __func__, "server id", LUA_TNUMBER, 0);
     getVerifiedArgument(L, 2, __func__, "path", LUA_TSTRING, 0);
     getVerifiedArgument(L, 3, __func__, "hook function", LUA_TFUNCTION, 0);
@@ -92,12 +94,20 @@ static int serve(lua_State* L)
 
     lua_pushvalue(L, 3);
     int luaRef = luaL_ref(L, LUA_REGISTRYINDEX);
-    Serve(L, serverId, path, luaRef);
-    return 0;
+    message = Serve(L, serverId, path, luaRef);
+    if (!message.success) {
+        lua_pushboolean(L, false);
+        lua_pushstring(L, message.msg);
+        free(message.msg);
+        return 2;
+    }
+    lua_pushboolean(L, true);
+    return 1;
 }
 
 static int serveWebSocket(lua_State* L)
 {
+    Message message;
     getVerifiedArgument(L, 1, __func__, "server id", LUA_TNUMBER, 0);
     getVerifiedArgument(L, 2, __func__, "path", LUA_TSTRING, 0);
     getVerifiedArgument(L, 3, __func__, "hook function", LUA_TFUNCTION, 0);
@@ -105,32 +115,56 @@ static int serveWebSocket(lua_State* L)
     const char* path = lua_tostring(L, 2);
     lua_pushvalue(L, 3);
     int luaRef = luaL_ref(L, LUA_REGISTRYINDEX);
-    ServeWebSocket(L, serverId, path, luaRef);
-    return 0;
+    message = ServeWebSocket(L, serverId, path, luaRef);
+    if (!message.success) {
+        lua_pushboolean(L, false);
+        lua_pushstring(L, message.msg);
+        free(message.msg);
+        return 2;
+    }
+
+    lua_pushboolean(L, true);
+    return 1;
 }
 
 static int writeWebSocket(lua_State* L)
 {
+    Message message;
     getVerifiedArgument(L, 1, __func__, "server id", LUA_TNUMBER, 0);
     getVerifiedArgument(L, 2, __func__, "client", LUA_TSTRING, 0);
     getVerifiedArgument(L, 3, __func__, "message", LUA_TSTRING, 0);
     int serverId = luaL_checkinteger(L, 1);
     const char* client = lua_tostring(L, 2);
-    const char* message = lua_tostring(L, 3);
-    WriteToWebSocketClient(serverId, client, message);
-    return 0;
+    const char* sendMessage = lua_tostring(L, 3);
+    message = WriteToWebSocketClient(serverId, client, sendMessage);
+    if (!message.success) {
+        lua_pushboolean(L, false);
+        lua_pushstring(L, message.msg);
+        free(message.msg);
+        return 2;
+    }
+    lua_pushboolean(L, true);
+    return 1;
 }
 
 static int serveFiles(lua_State* L)
 {
+    Message message;
     getVerifiedArgument(L, 1, __func__, "server id", LUA_TNUMBER, 0);
     getVerifiedArgument(L, 2, __func__, "path", LUA_TSTRING, 0);
     getVerifiedArgument(L, 3, __func__, "directory", LUA_TSTRING, 0);
     int serverId = luaL_checkinteger(L, 1);
     const char* path = lua_tostring(L, 2);
     const char* dir = lua_tostring(L, 3);
-    ServeFiles(serverId, path, dir);
-    return 0;
+    message = ServeFiles(serverId, path, dir);
+    if (!message.success) {
+        lua_pushboolean(L, false);
+        lua_pushstring(L, message.msg);
+        free(message.msg);
+        return 2;
+    }
+    lua_pushboolean(L, true);
+    return 1;
 }
 
 static int stopWebserver(lua_State* L)
@@ -138,8 +172,7 @@ static int stopWebserver(lua_State* L)
     getVerifiedArgument(L, 1, __func__, "server id", LUA_TNUMBER, 0);
     int serverId = luaL_checkinteger(L, 1);
     StopServer(serverId);
-    lua_pushboolean(L, true);
-    return 1;
+    return 0;
 }
 
 #ifndef LUAWEBSERVER_LIB

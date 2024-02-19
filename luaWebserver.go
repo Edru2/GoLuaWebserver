@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -55,15 +56,17 @@ func generateUniqueID() string {
 }
 
 //export Serve
-func Serve(L *C.lua_State, serverID C.int, path *C.cchar_t, luaFuncRef C.int) {
+func Serve(L *C.lua_State, serverID C.int, path *C.cchar_t, luaFuncRef C.int) C.Message {
 	goServerId := int(serverID)
 
 	mutex.RLock()
 	server, exists := servers[goServerId]
 	mutex.RUnlock()
 	if !exists {
-		log.Printf("Server with ID %d not found", serverID)
-		return
+		return C.Message{
+			msg:     C.CString(fmt.Sprintf("Server with ID %d not found", serverID)),
+			success: false,
+		}
 	}
 
 	goPath := C.GoString(path)
@@ -74,8 +77,10 @@ func Serve(L *C.lua_State, serverID C.int, path *C.cchar_t, luaFuncRef C.int) {
 	_, exists = server.Paths[goPath]
 	mutex.RUnlock()
 	if exists {
-		log.Printf("Path exists already!")
-		return
+		return C.Message{
+			msg:     C.CString(fmt.Sprintf("Path %s exists already!", goPath)),
+			success: false,
+		}
 	}
 
 	mutex.Lock()
@@ -106,6 +111,10 @@ func Serve(L *C.lua_State, serverID C.int, path *C.cchar_t, luaFuncRef C.int) {
 			w.WriteHeader(statusCode)
 			w.Write([]byte(responseBody))
 		})
+	return C.Message{
+		success: false,
+	}
+
 }
 
 func callLuaFunction(L *C.lua_State, luaFuncRef C.int, r *http.Request, path string) (int, string, map[string]string) {
@@ -180,9 +189,22 @@ func callLuaFunction(L *C.lua_State, luaFuncRef C.int, r *http.Request, path str
 	return statusCode, responseBody, responseHeaders
 }
 
+// Check if the address is available by trying to listen on it
+func isAddressAvailable(address string) bool {
+	listener, err := net.Listen("tcp", address)
+	if err != nil {
+		return false // Address not available
+	}
+	listener.Close() // Close immediately after checking
+	return true
+}
+
 //export StartServer
 func StartServer(address *C.cchar_t) C.int {
 	serverAddress := C.GoString(address)
+	if !isAddressAvailable(serverAddress) {
+		return C.int(-1)
+	}
 	id := nextID
 	nextID++
 	mux := http.NewServeMux()
@@ -198,7 +220,6 @@ func StartServer(address *C.cchar_t) C.int {
 		WebSocketClients: make(map[string]*Client),
 	}
 	servers[id] = server
-	log.Println("Opening new webserver at:", serverAddress)
 	go func() {
 		defer delete(servers, id)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -209,13 +230,15 @@ func StartServer(address *C.cchar_t) C.int {
 }
 
 //export ServeWebSocket
-func ServeWebSocket(L *C.lua_State, serverID C.int, path *C.cchar_t, luaFuncRef C.int) {
+func ServeWebSocket(L *C.lua_State, serverID C.int, path *C.cchar_t, luaFuncRef C.int) C.Message {
 	goServerId := int(serverID)
 
 	server, exists := servers[goServerId]
 	if !exists {
-		log.Printf("Server with ID %d not found", serverID)
-		return
+		return C.Message{
+			msg:     C.CString(fmt.Sprintf("Server with ID %d not found", serverID)),
+			success: false,
+		}
 	}
 	goPath := C.GoString(path)
 	if goPath == "" {
@@ -226,8 +249,10 @@ func ServeWebSocket(L *C.lua_State, serverID C.int, path *C.cchar_t, luaFuncRef 
 	mutex.RUnlock()
 
 	if exists {
-		log.Printf("Path exists already!")
-		return
+		return C.Message{
+			msg:     C.CString(fmt.Sprintf("Path %s exists already!", goPath)),
+			success: false,
+		}
 	}
 	mutex.Lock()
 	server.Paths[goPath] = &PathFunction{
@@ -278,40 +303,56 @@ func ServeWebSocket(L *C.lua_State, serverID C.int, path *C.cchar_t, luaFuncRef 
 				mutex.Unlock()
 			}
 		})
+	return C.Message{
+		success: true,
+	}
 }
 
 //export WriteToWebSocketClient
-func WriteToWebSocketClient(serverID C.int, clientID *C.cchar_t, message *C.cchar_t) {
+func WriteToWebSocketClient(serverID C.int, clientID *C.cchar_t, message *C.cchar_t) C.Message {
 	goClientId := C.GoString(clientID)
 	goServerId := int(serverID)
 	goMessage := C.GoString(message)
 
 	server, exists := servers[goServerId]
 	if !exists {
-		log.Printf("Server with ID %d not found", goServerId)
-		return
+		return C.Message{
+			msg:     C.CString(fmt.Sprintf("Server with ID %d not found", serverID)),
+			success: false,
+		}
 	}
 
 	client, exists := server.WebSocketClients[goClientId]
 	if !exists {
-		log.Printf("Client with ID %s not found", goClientId)
-		return
+		return C.Message{
+			msg:     C.CString(fmt.Sprintf("Client with ID %s not found", goClientId)),
+			success: false,
+		}
 	}
 
-	err := client.Conn.WriteMessage(1, []byte(goMessage))
+	err := client.Conn.WriteMessage(websocket.TextMessage, []byte(goMessage))
 	if err != nil {
-		log.Println("write:", err)
+		return C.Message{
+			msg:     C.CString(fmt.Sprint("Write to websocket error:", err)),
+			success: false,
+		}
+
+	}
+	return C.Message{
+		success: true,
 	}
 
 }
 
 //export ServeFiles
-func ServeFiles(serverID C.int, path *C.cchar_t, dir *C.cchar_t) {
+func ServeFiles(serverID C.int, path *C.cchar_t, dir *C.cchar_t) C.Message {
 	goServerId := int(serverID)
 	server, exists := servers[goServerId]
 	if !exists {
-		log.Printf("Server with ID %d not found", serverID)
-		return
+		return C.Message{
+			msg:     C.CString(fmt.Sprintf("Server with ID %d not found", serverID)),
+			success: false,
+		}
 	}
 	goDir := C.GoString(dir)
 	goPath := C.GoString(path)
@@ -322,8 +363,10 @@ func ServeFiles(serverID C.int, path *C.cchar_t, dir *C.cchar_t) {
 	_, exists = server.Paths[goPath]
 	mutex.RUnlock()
 	if exists {
-		log.Printf("Path exists already!")
-		return
+		return C.Message{
+			msg:     C.CString(fmt.Sprintf("Path %s exists already!", goPath)),
+			success: false,
+		}
 	}
 
 	mutex.Lock()
@@ -333,6 +376,9 @@ func ServeFiles(serverID C.int, path *C.cchar_t, dir *C.cchar_t) {
 	fileServer := http.FileServer(http.Dir(goDir))
 	mux := server.Handler.(*http.ServeMux)
 	mux.Handle(goPath, http.StripPrefix(goPath, fileServer))
+	return C.Message{
+		success: true,
+	}
 }
 
 //export StopServer

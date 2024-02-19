@@ -60,6 +60,9 @@ jobs:
         with:
           path: artifacts
 
+      - name: Setup GitHub CLI
+        uses: actions/setup-cli@v2
+
       - name: Create Release
         id: create_release
         uses: actions/create-release@v1
@@ -72,18 +75,14 @@ jobs:
           prerelease: false
 
       - name: Upload Release Assets
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           ARTIFACTS_DIR=artifacts
-          if [ -d "$ARTIFACTS_DIR" ] && [ "$(ls -A $ARTIFACTS_DIR)" ]; then
-            for FILE in $ARTIFACTS_DIR/*; do
-              FILE_NAME=$(basename "$FILE")
-              echo "Uploading $FILE_NAME"
-              MIME_TYPE=$(file -b --mime-type "$FILE")
-              UPLOAD_URL="${{ steps.create_release.outputs.upload_url }}?name=$FILE_NAME&label=$FILE_NAME"
-              RESPONSE=$(curl -X POST -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" -H "Content-Type: $MIME_TYPE" --data-binary @"$FILE" "$UPLOAD_URL")
-              echo "Upload response: $RESPONSE"
-            done
-          else
-            echo "No artifacts found in $ARTIFACTS_DIR."
-          fi
+          VERSION=release-${{ github.run_number }}-${{ github.sha }}
+
+          for FILE in $ARTIFACTS_DIR/*; do
+            echo "Uploading $FILE to release $VERSION"
+            gh release upload "$VERSION" "$FILE" --repo ${{ github.repository }}
+          done
         shell: bash

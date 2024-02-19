@@ -3,6 +3,7 @@
 #define LUAWEBSERVERHELPER_H
 
 #include <lua.h>
+#include <stdbool.h>
 
 typedef struct
 {
@@ -13,7 +14,8 @@ typedef struct
     int headersCount;
 } LuaHttpResponse;
 
-typedef struct {
+typedef struct
+{
     char* method;
     char* path;
     char* url;
@@ -26,6 +28,13 @@ typedef struct {
     int headersCount;
     char* body;
 } HttpRequest;
+
+typedef struct
+{
+    char* msg;
+    bool success;
+} Message;
+
 
 // Function prototypes
 LuaHttpResponse* callLuaFunc(lua_State* L, int luaRef, HttpRequest* request);
