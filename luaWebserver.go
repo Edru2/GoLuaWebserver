@@ -190,20 +190,25 @@ func callLuaFunction(L *C.lua_State, luaFuncRef C.int, r *http.Request, path str
 }
 
 // Check if the address is available by trying to listen on it
-func isAddressAvailable(address string) bool {
+func isAddressAvailable(address string) error {
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
-		return false // Address not available
+		return err
 	}
-	listener.Close() // Close immediately after checking
-	return true
+	listener.Close()
+	return nil
 }
 
 //export StartServer
-func StartServer(address *C.cchar_t) C.int {
+func StartServer(address, certFile, keyFile *C.cchar_t) C.Message {
 	serverAddress := C.GoString(address)
-	if !isAddressAvailable(serverAddress) {
-		return C.int(-1)
+	if err := isAddressAvailable(serverAddress); err != nil {
+		errMessage := fmt.Sprintf("Failed to create server at %s, reason %s", C.GoString(address), err.Error())
+		log.Printf(errMessage)
+		return C.Message{
+			msg:     C.CString(errMessage),
+			success: false,
+		}
 	}
 	id := nextID
 	nextID++
@@ -222,11 +227,20 @@ func StartServer(address *C.cchar_t) C.int {
 	servers[id] = server
 	go func() {
 		defer delete(servers, id)
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Println("ListenAndServe: ", err)
+		if certFile == nil || keyFile == nil {
+			if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				log.Println("ListenAndServe: ", err)
+			}
+		} else {
+			if err := server.ListenAndServeTLS(C.GoString(certFile), C.GoString(keyFile)); err != nil && err != http.ErrServerClosed {
+				log.Println("ListenAndServe: ", err)
+			}
 		}
 	}()
-	return C.int(id)
+	return C.Message{
+		success: true,
+		id: C.int(id),
+	}
 }
 
 //export ServeWebSocket
@@ -382,36 +396,48 @@ func ServeFiles(serverID C.int, path *C.cchar_t, dir *C.cchar_t) C.Message {
 }
 
 //export StopServer
-func StopServer(serverID C.int) {
+func StopServer(serverID C.int) C.Message {
 	id := int(serverID)
-	GoStopServer(id)
+	err := GoStopServer(id)
+	if err != nil {
+		return C.Message{
+			msg:     C.CString(err.Error()),
+			success: false,
+		}
+
+	}
+	return C.Message{
+		success: true,
+	}
+
 }
 
-func GoStopServer(id int) {
+func GoStopServer(id int) error {
 	server, exists := servers[id]
-	if exists {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		for clientID, client := range server.WebSocketClients {
-			err := client.Conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
-			if err != nil {
-				log.Printf("Failed to write close message to client %s: %v", clientID, err)
-			}
-			err = client.Conn.Close()
-			if err != nil {
-				log.Printf("Failed to close client %s: %v", clientID, err)
-			}
-		}
-		if err := server.Shutdown(ctx); err != nil {
-			log.Printf("Shutdown failed: %+v", err)
-			GoStopServer(id)
-		} else {
-			delete(servers, id)
-			log.Printf("Server with ID %d shut down successfully", id)
-		}
-	} else {
+	if !exists {
 		log.Printf("Server with ID %d not found", id)
+		return fmt.Errorf("Server with ID %d not found", id)
 	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	for clientID, client := range server.WebSocketClients {
+		err := client.Conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
+		if err != nil {
+			log.Printf("Failed to write close message to client %s: %v", clientID, err)
+		}
+		err = client.Conn.Close()
+		if err != nil {
+			log.Printf("Failed to close client %s: %v", clientID, err)
+		}
+	}
+	if err := server.Shutdown(ctx); err != nil {
+		log.Printf("Shutdown failed: %+v", err)
+		return fmt.Errorf("Shutdown failed: %+v", err)
+	}
+	delete(servers, id)
+	log.Printf("Server with ID %d shut down successfully", id)
+	return nil
 }
 
 //export StopAllServers

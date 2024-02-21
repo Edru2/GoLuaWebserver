@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+	<title></title>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<link href="css/style.css" rel="stylesheet">
+</head>
+
+<body style="color: rgb(150,150,50); background: rgb(50,50,50);">
+	<div hx-get = "/clicked" hx-trigger = "every .5s">
+		<div>Hello <%= name %>,</div>
+		Here are your items:
+		<% for i, item in pairs(items) do %>
+			<ul>* <%= i %> = <%= item %>
+			</ul>
+			<% end %>
+	</div>
+</body>
+
+</html>

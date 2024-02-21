@@ -76,10 +76,36 @@ void getVerifiedArgument(lua_State* L, int pos, const char* functionName, const 
 
 static int startWebserver(lua_State* L)
 {
-    getVerifiedArgument(L, 1, __func__, "address", LUA_TSTRING, 0); /* Verify first argument is a string */
+    Message message;
+    getVerifiedArgument(L, 1, __func__, "address", LUA_TSTRING, 0);
     const char* address = lua_tostring(L, 1);
-    int serverId = StartServer(address);
-    lua_pushinteger(L, serverId);
+    message = StartServer(address, NULL, NULL);
+    if (!message.success) {
+        lua_pushinteger(L, -1);
+        lua_pushstring(L, message.msg);
+        free(message.msg);
+        return 2;
+    }
+    lua_pushinteger(L, message.id);
+    return 1;
+}
+
+static int startSecureWebserver(lua_State* L)
+{
+    getVerifiedArgument(L, 1, __func__, "address", LUA_TSTRING, 0);
+    getVerifiedArgument(L, 2, __func__, "certFile", LUA_TSTRING, 0);
+    getVerifiedArgument(L, 3, __func__, "keyFile", LUA_TSTRING, 0);
+    const char* address = lua_tostring(L, 1);
+    const char* certFile = lua_tostring(L, 2);
+    const char* keyFile = lua_tostring(L, 3);
+    Message message = StartServer(address, certFile, keyFile);
+    if (!message.success) {
+        lua_pushinteger(L, -1);
+        lua_pushstring(L, message.msg);
+        free(message.msg);
+        return 2;
+    }
+    lua_pushinteger(L, message.id);
     return 1;
 }
 
@@ -171,7 +197,13 @@ static int stopWebserver(lua_State* L)
 {
     getVerifiedArgument(L, 1, __func__, "server id", LUA_TNUMBER, 0);
     int serverId = luaL_checkinteger(L, 1);
-    StopServer(serverId);
+    Message message = StopServer(serverId);
+    if (!message.success) {
+        lua_pushboolean(L, false);
+        lua_pushstring(L, message.msg);
+        free(message.msg);
+        return 2;
+    }
     return 0;
 }
 
@@ -189,6 +221,8 @@ LUAWEBSERVER_LIB int luaopen_goLuaWebserver(lua_State* L)
     lua_newtable(L);
     lua_pushcfunction(L, startWebserver);
     lua_setfield(L, -2, "startWebserver");
+    lua_pushcfunction(L, startSecureWebserver);
+    lua_setfield(L, -2, "startSecureWebserver");
     lua_pushcfunction(L, stopWebserver);
     lua_setfield(L, -2, "stopWebserver");
     lua_pushcfunction(L, serve);

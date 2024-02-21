@@ -1,10 +1,10 @@
 package.path = package.path .. ";../?.so"
 local etlua = require("Examples.etlua")
 local web = require("goLuaWebserver")
-local serverId = web.startWebserver("localhost:8080")
+local serverId = web.startSecureWebserver("localhost:8080", "server.crt", "server.key")
 local template = etlua.compile([[
   <body style="color: rgb(150,150,50); background: rgb(50,50,50);">
-  Hello <%= name %>,
+  <div>Hello <%= name %>,</div>
   Here are your items:
   <% for i, item in pairs(items) do %>
    <ul>* <%= i %> = <%= item %></ul>

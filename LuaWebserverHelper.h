@@ -33,6 +33,7 @@ typedef struct
 {
     char* msg;
     bool success;
+    int id;
 } Message;
 
 
