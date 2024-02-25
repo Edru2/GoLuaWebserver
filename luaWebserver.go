@@ -105,6 +105,11 @@ func Serve(L *C.lua_State, serverID C.int, path *C.cchar_t, luaFuncRef C.int) C.
 			mutex.Lock()
 			statusCode, responseBody, headers := callLuaFunction(luaState, luaFuncRef, r, goPath)
 			mutex.Unlock()
+
+			if statusCode == 404 && responseBody == "" && len(headers) == 0 {
+				http.NotFound(w, r)
+				return
+			}
 			for key, value := range headers {
 				w.Header().Set(key, value)
 			}
@@ -112,7 +117,7 @@ func Serve(L *C.lua_State, serverID C.int, path *C.cchar_t, luaFuncRef C.int) C.
 			w.Write([]byte(responseBody))
 		})
 	return C.Message{
-		success: false,
+		success: true,
 	}
 
 }
@@ -141,7 +146,7 @@ func callLuaFunction(L *C.lua_State, luaFuncRef C.int, r *http.Request, path str
 		C.free(unsafe.Pointer(cReq.remoteAddr))
 		C.free(unsafe.Pointer(cReq.body))
 	}()
-	maxHeaders := 20
+	maxHeaders := 50
 	if len(r.Header) < maxHeaders {
 		maxHeaders = len(r.Header)
 	}
@@ -239,7 +244,7 @@ func StartServer(address, certFile, keyFile *C.cchar_t) C.Message {
 	}()
 	return C.Message{
 		success: true,
-		id: C.int(id),
+		id:      C.int(id),
 	}
 }
 
@@ -355,7 +360,99 @@ func WriteToWebSocketClient(serverID C.int, clientID *C.cchar_t, message *C.ccha
 	return C.Message{
 		success: true,
 	}
+}
 
+//export BroadcastToWebSocket
+func BroadcastToWebSocket(serverID C.int, path *C.cchar_t, message *C.cchar_t) C.Message {
+	goServerId := int(serverID)
+	goMessage := C.GoString(message)
+
+	server, exists := servers[goServerId]
+	if !exists {
+		return C.Message{
+			msg:     C.CString(fmt.Sprintf("Server with ID %d not found", serverID)),
+			success: false,
+		}
+	}
+	goPath := C.GoString(path)
+	if goPath == "" {
+		goPath = "/"
+	}
+	mutex.RLock()
+	_, exists = server.Paths[goPath]
+	mutex.RUnlock()
+
+	if !exists || len(server.Paths[goPath].Clients) == 0 {
+		return C.Message{
+			msg:     C.CString(fmt.Sprintf("No path or no clients at '%s'", goPath)),
+			success: false,
+		}
+	}
+
+	var errMsg strings.Builder
+	for _, client := range server.Paths[goPath].Clients {
+		err := client.Conn.WriteMessage(websocket.TextMessage, []byte(goMessage))
+		if err != nil {
+			errMsg.WriteString(err.Error() + "\n")
+		}
+	}
+
+	if errMsg.Len() > 0 {
+		return C.Message{
+			msg:     C.CString(fmt.Sprint("Broadcast to websocket error(s):", errMsg.String())),
+			success: false,
+		}
+	}
+
+	return C.Message{
+		success: true,
+	}
+}
+
+//export GetWebSocketClients
+func GetWebSocketClients(serverID C.int) C.ClientInfo {
+	goServerId := int(serverID)
+
+	cClientInfo := C.ClientInfo{
+		errHandling: C.Message{success: true},
+	}
+
+	server, exists := servers[goServerId]
+	if !exists {
+		cClientInfo.errHandling = C.Message{msg: C.CString(fmt.Sprintf("Server with ID %d not found", serverID)),
+			success: false}
+
+		return cClientInfo
+	}
+	type clientInfo struct {
+		clientId string
+		path     string
+	}
+	var clientList []clientInfo
+	for path, pathFunction := range server.Paths {
+		if len(pathFunction.Clients) != 0 {
+			for clientId, _ := range pathFunction.Clients {
+				clientList = append(clientList, clientInfo{clientId: clientId, path: path})
+			}
+		}
+	}
+
+	clientCount := len(clientList)
+	cClientInfo.clientCount = C.int(clientCount)
+	cClientInfo.clientIds = (**C.char)(C.calloc(C.size_t(clientCount), C.size_t(unsafe.Sizeof(uintptr(0)))))
+	cClientInfo.paths = (**C.char)(C.calloc(C.size_t(clientCount), C.size_t(unsafe.Sizeof(uintptr(0)))))
+	for i, client := range clientList {
+		clientId := C.CString(client.clientId)
+		clientPath := C.CString(client.path)
+
+		offsetClientId := (**C.char)(unsafe.Pointer(uintptr(unsafe.Pointer(cClientInfo.clientIds)) + uintptr(i)*unsafe.Sizeof(clientId)))
+		*offsetClientId = clientId
+
+		offsetClientPath := (**C.char)(unsafe.Pointer(uintptr(unsafe.Pointer(cClientInfo.paths)) + uintptr(i)*unsafe.Sizeof(clientPath)))
+		*offsetClientPath = clientPath
+	}
+
+	return cClientInfo
 }
 
 //export ServeFiles
@@ -450,10 +547,10 @@ func StopAllServers() {
 //export StopLuaStateFunctions
 func StopLuaStateFunctions(L *C.lua_State) {
 	for _, server := range servers {
-		for _, path := range server.Paths {
-			if L == path.LuaState {
-				path.FunctionRef = 0
-				path.LuaState = nil
+		for _, pathFunction := range server.Paths {
+			if L == pathFunction.LuaState {
+				pathFunction.FunctionRef = 0
+				pathFunction.LuaState = nil
 			}
 		}
 	}

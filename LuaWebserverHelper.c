@@ -3,6 +3,7 @@
 #include <lua.h>
 #include <lualib.h>
 #include <stdbool.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -14,6 +15,7 @@ LuaHttpResponse* callLuaFunc(lua_State* L, int luaRef, HttpRequest* request)
     }
     LuaHttpResponse* response = (LuaHttpResponse*)malloc(sizeof(LuaHttpResponse));
     if (!response) {
+        lua_pushstring(L, "Error when allocating memory for response.");
         return NULL;
     }
 
@@ -47,35 +49,38 @@ LuaHttpResponse* callLuaFunc(lua_State* L, int luaRef, HttpRequest* request)
     error = lua_pcall(L, 1, LUA_MULTRET, 0);
     if (error != 0) {
         const char* errorMsg = lua_tostring(L, -1);
-        lua_pop(L, 1);  // Remove the error message from the stack
-        free(response); // Avoid memory leak
-        lua_pushfstring(L, "Error when calling hook function: %s", errorMsg);
-        return NULL; // Indicate failure
-    }
-
-    if (lua_gettop(L) < 3) {
+        lua_pop(L, 1); // Remove the error message from the stack
         free(response);
-        lua_pushfstring(L, "Not enough arguments in function %s. Expected are %d got %d.", "http hook return", 3, lua_gettop(L));
+        lua_pushfstring(L, "Error when calling hook function: %s", errorMsg);
         return NULL;
     }
 
     if (!lua_isnumber(L, 1)) {
         free(response);
         lua_pushfstring(L, "Argument %d (%s) must be a %s in function %s", 1, "status code", "integer", "http hook return");
-        return NULL; // Indicate failure
+        return NULL;
     }
+
+    int statusCode = (int)lua_tonumber(L, 1);
+    response->statusCode = statusCode;
+
+    if (statusCode == 404 && lua_gettop(L) == 1) {
+        response->headersCount = 0;
+        response->responseBody = NULL;
+        return response;
+    }
+
     if (!lua_isstring(L, 2)) {
         free(response);
         lua_pushfstring(L, "Argument %d (%s) must be a %s in function %s", 2, "response body", "string", "http hook return");
-        return NULL; // Indicate failure
+        return NULL;
     }
     if (!lua_istable(L, 3)) {
         free(response);
         lua_pushfstring(L, "Argument %d (%s) must be a %s in function %s", 3, "header table", "table", "http hook return");
-        return NULL; // Indicate failure
+        return NULL;
     }
 
-    int statusCode = (int)lua_tonumber(L, 1);
     const char* responseBody = lua_tostring(L, -2);
     response->responseBody = malloc(strlen(responseBody) + 1);
 
@@ -90,7 +95,7 @@ LuaHttpResponse* callLuaFunc(lua_State* L, int luaRef, HttpRequest* request)
             const char* headerName = lua_tostring(L, -2);
             const char* headerValue = lua_tostring(L, -1);
 
-            if (i < 10) {
+            if (i < 50) {
                 strncpy(response->headersKeys[i], headerName, 255);
                 response->headersKeys[i][255] = '\0';
                 strncpy(response->headersValues[i], headerValue, 255);
@@ -102,8 +107,6 @@ LuaHttpResponse* callLuaFunc(lua_State* L, int luaRef, HttpRequest* request)
         }
         response->headersCount = i;
     }
-    response->statusCode = statusCode;
-
     lua_pop(L, 3);
     return response;
 }

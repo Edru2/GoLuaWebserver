@@ -35,6 +35,11 @@ local function handleRequest(request)
 	return 200, html, { ["Content-Type"] = "text/html" }
 end
 
+local function handleError()
+	print("Handling a CUSTOM 404")
+	return 404
+end
+
 
 local function handleSocket(client, messagetype, message)
 	print(string.format("Client: %s MT: %d Message: %s", client, messagetype, message))
@@ -44,7 +49,15 @@ end
 io.write("Path:")
 local path = io.read()
 web.serve(serverId, string.format("/%s", path), handleRequest)
+web.serve(serverId, "/error", handleError)
 web.serveWebSocket(serverId, "/ws", handleSocket)
+print("Starting Websocket endpoing /ws")
+io.read()
+local success, value = web.getWebSocketClients(serverId)
+print(string.format("websocket clients: value %s, success %s", tostring(value), tostring(success)))
+for k, v in pairs(value) do
+	print(tostring(k) .. " : " .. tostring(v))
+end
 io.read()
 web.stopWebserver(serverId)
 print("Stopping Server. Wait...")

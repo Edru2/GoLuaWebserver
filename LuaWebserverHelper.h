@@ -23,8 +23,8 @@ typedef struct
     long contentLength;
     char* host;
     char* remoteAddr;
-    char headersKeys[20][256];
-    char headersValues[20][256];
+    char headersKeys[50][256];
+    char headersValues[50][256];
     int headersCount;
     char* body;
 } HttpRequest;
@@ -36,6 +36,13 @@ typedef struct
     int id;
 } Message;
 
+typedef struct 
+{
+    Message errHandling;
+    int clientCount;
+    char** clientIds;
+    char** paths;
+} ClientInfo;
 
 // Function prototypes
 LuaHttpResponse* callLuaFunc(lua_State* L, int luaRef, HttpRequest* request);

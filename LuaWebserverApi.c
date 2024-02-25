@@ -173,6 +173,51 @@ static int writeWebSocket(lua_State* L)
     return 1;
 }
 
+static int broadcastWebSocket(lua_State* L)
+{
+    Message message;
+    getVerifiedArgument(L, 1, __func__, "server id", LUA_TNUMBER, 0);
+    getVerifiedArgument(L, 2, __func__, "path", LUA_TSTRING, 0);
+    getVerifiedArgument(L, 3, __func__, "message", LUA_TSTRING, 0);
+    int serverId = luaL_checkinteger(L, 1);
+    const char* path = lua_tostring(L, 2);
+    const char* sendMessage = lua_tostring(L, 3);
+    message = BroadcastToWebSocket(serverId, path, sendMessage);
+    if (!message.success) {
+        lua_pushboolean(L, false);
+        lua_pushstring(L, message.msg);
+        free(message.msg);
+        return 2;
+    }
+    lua_pushboolean(L, true);
+    return 1;
+}
+
+static int getWebSocketClients(lua_State* L)
+{
+    ClientInfo infos;
+    getVerifiedArgument(L, 1, __func__, "server id", LUA_TNUMBER, 0);
+    int serverId = luaL_checkinteger(L, 1);
+    infos = GetWebSocketClients(serverId);
+    if (!infos.errHandling.success) {
+        lua_pushboolean(L, false);
+        lua_pushstring(L, infos.errHandling.msg);
+        free(infos.errHandling.msg);
+        return 2;
+    }
+    lua_pushboolean(L, true);
+    lua_newtable(L);
+    for (int i = 0; i < infos.clientCount; i++) {
+        lua_pushstring(L, infos.paths[i]);
+        lua_setfield(L, -2, infos.clientIds[i]);
+        free(infos.clientIds[i]);
+        free(infos.paths[i]);
+    }
+    free(infos.clientIds);
+    free(infos.paths);
+    return 2;
+}
+
 static int serveFiles(lua_State* L)
 {
     Message message;
@@ -233,6 +278,11 @@ LUAWEBSERVER_LIB int luaopen_goLuaWebserver(lua_State* L)
     lua_setfield(L, -2, "writeWebSocket");
     lua_pushcfunction(L, serveFiles);
     lua_setfield(L, -2, "serveFiles");
+    lua_pushcfunction(L, broadcastWebSocket);
+    lua_setfield(L, -2, "broadcastWebSocket");
+    lua_pushcfunction(L, getWebSocketClients);
+    lua_setfield(L, -2, "getWebSocketClients");
+
 
     return 1;
 }
