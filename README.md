@@ -1,4 +1,5 @@
 # Lua-Go Webserver
+<img src="https://github.com/Edru2/GoLuaWebserver/assets/60551052/80c22504-7946-457b-84f4-a1f01fd1088d" width="400" alt="Golang Gopher looking at the Moon (Lua)">
 
 The Lua-Go Webserver Integration project enables the use of Lua scripts to manage and control web server built in Go. This unique combination allows developers to leverage the simplicity and flexibility of Lua scripting for server-side logic, alongside Go's robust networking capabilities, efficient concurrency model, and high scalability. Whether serving dynamic HTTP content or handling real-time communications through WebSockets, this integration offers a powerful and versatile platform for web application development.
 
